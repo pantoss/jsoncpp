@@ -1384,6 +1384,7 @@ JSONTEST_FIXTURE(ValueTest, compareString) {
   JSONTEST_ASSERT_PRED(checkIsEqual(" ", " "));
   JSONTEST_ASSERT_PRED(checkIsLess("ABCD", "abcd"));
   JSONTEST_ASSERT_PRED(checkIsEqual("ABCD", "ABCD"));
+  JSONTEST_ASSERT_PRED(checkIsEqual("/Date(123456)/", "/Date(123456)/"));
 }
 
 JSONTEST_FIXTURE(ValueTest, compareBoolean) {
@@ -1804,6 +1805,14 @@ JSONTEST_FIXTURE(WriterTest, dropNullPlaceholders) {
   JSONTEST_ASSERT(writer.write(nullValue) == "\n");
 }
 
+JSONTEST_FIXTURE(WriterTest, enableSlashEscaping) {
+  Json::FastWriter writer;
+
+  JSONTEST_ASSERT(writer.write("/Date(12334)/") == "\"/Date(12334)/\"\n");
+  writer.enableSlashEscaping();
+  JSONTEST_ASSERT(writer.write("/Date(12334)/") == "\"\\/Date(12334)\\/\"\n");
+}
+
 struct StreamWriterTest : JsonTest::TestCase {};
 
 JSONTEST_FIXTURE(StreamWriterTest, dropNullPlaceholders) {
@@ -1813,6 +1822,15 @@ JSONTEST_FIXTURE(StreamWriterTest, dropNullPlaceholders) {
   JSONTEST_ASSERT(Json::writeString(b, nullValue) == "null");
   b.settings_["dropNullPlaceholders"] = true;
   JSONTEST_ASSERT(Json::writeString(b, nullValue) == "");
+}
+
+JSONTEST_FIXTURE(StreamWriterTest, enableSlashEscaping) {
+  Json::StreamWriterBuilder b;
+
+  b.settings_["enableSlashEscaping"] = false;
+  JSONTEST_ASSERT(Json::writeString(b, "/Date(12334)/") == "\"/Date(12334)/\"");
+  b.settings_["enableSlashEscaping"] = true;
+  JSONTEST_ASSERT(Json::writeString(b, "/Date(12334)/") == "\"\\/Date(12334)\\/\"");
 }
 
 JSONTEST_FIXTURE(StreamWriterTest, writeZeroes) {
@@ -1926,6 +1944,18 @@ JSONTEST_FIXTURE(ReaderTest, parseWithDetailError) {
   JSONTEST_ASSERT(errors.at(0).offset_start == 15);
   JSONTEST_ASSERT(errors.at(0).offset_limit == 23);
   JSONTEST_ASSERT(errors.at(0).message == "Bad escape sequence in string");
+}
+
+JSONTEST_FIXTURE(ReaderTest, parseWithSlash) {
+  Json::Reader reader;
+  Json::Value root;
+  bool ok = reader.parse("{ \"slash\" : \"/\", \"escaped_slash\" : \"\\/\", \"backslash_slash\" : \"\\\\/\" }", root);
+  JSONTEST_ASSERT(ok);
+  JSONTEST_ASSERT(reader.getFormattedErrorMessages().size() == 0);
+  JSONTEST_ASSERT(reader.getStructuredErrors().size() == 0);
+  JSONTEST_ASSERT_STRING_EQUAL(root["slash"].asString(), "/");
+  JSONTEST_ASSERT_STRING_EQUAL(root["escaped_slash"].asString(), "/");
+  JSONTEST_ASSERT_STRING_EQUAL(root["backslash_slash"].asString(), "\\/");
 }
 
 struct CharReaderTest : JsonTest::TestCase {};
@@ -2532,7 +2562,9 @@ int main(int argc, const char* argv[]) {
   JSONTEST_REGISTER_FIXTURE(runner, ValueTest, precision);
 
   JSONTEST_REGISTER_FIXTURE(runner, WriterTest, dropNullPlaceholders);
+  JSONTEST_REGISTER_FIXTURE(runner, WriterTest, enableSlashEscaping);
   JSONTEST_REGISTER_FIXTURE(runner, StreamWriterTest, dropNullPlaceholders);
+  JSONTEST_REGISTER_FIXTURE(runner, StreamWriterTest, enableSlashEscaping);
   JSONTEST_REGISTER_FIXTURE(runner, StreamWriterTest, writeZeroes);
 
   JSONTEST_REGISTER_FIXTURE(runner, ReaderTest, parseWithNoErrors);
@@ -2541,6 +2573,7 @@ int main(int argc, const char* argv[]) {
   JSONTEST_REGISTER_FIXTURE(runner, ReaderTest, parseWithOneError);
   JSONTEST_REGISTER_FIXTURE(runner, ReaderTest, parseChineseWithOneError);
   JSONTEST_REGISTER_FIXTURE(runner, ReaderTest, parseWithDetailError);
+  JSONTEST_REGISTER_FIXTURE(runner, ReaderTest, parseWithSlash);
 
   JSONTEST_REGISTER_FIXTURE(runner, CharReaderTest, parseWithNoErrors);
   JSONTEST_REGISTER_FIXTURE(runner, CharReaderTest,

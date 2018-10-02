@@ -150,6 +150,10 @@ public:
   virtual ~Writer();
 
   virtual JSONCPP_STRING write(const Value& root) = 0;
+
+  virtual void enableSlashEscaping();
+protected:
+  bool slashEscapingEnabled_{};
 };
 
 /** \brief Outputs a Value in <a HREF="http://www.json.org">JSON</a> format
@@ -299,8 +303,9 @@ class JSONCPP_DEPRECATED("Use StreamWriterBuilder instead") JSON_API
 public:
   /**
    * \param indentation Each level will be indented by this amount extra.
+   * \param escape / to be \/
    */
-  StyledStreamWriter(const JSONCPP_STRING& indentation = "\t");
+  StyledStreamWriter(const JSONCPP_STRING& indentation = "\t", bool slashEscape = false);
   ~StyledStreamWriter() {}
 
 public:
@@ -335,6 +340,7 @@ private:
   JSONCPP_STRING indentation_;
   bool addChildValues_ : 1;
   bool indented_ : 1;
+  bool slashEscapingEnabled_ : 1;
 };
 #if defined(_MSC_VER)
 #pragma warning(pop)

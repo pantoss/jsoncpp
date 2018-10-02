@@ -272,7 +272,7 @@ static JSONCPP_STRING toHex16Bit(unsigned int x) {
   return result;
 }
 
-static JSONCPP_STRING valueToQuotedStringN(const char* value, unsigned length) {
+static JSONCPP_STRING valueToQuotedStringN(const char* value, unsigned length, bool escapeSlash) {
   if (value == NULL)
     return "";
 
@@ -309,14 +309,12 @@ static JSONCPP_STRING valueToQuotedStringN(const char* value, unsigned length) {
     case '\t':
       result += "\\t";
       break;
-    // case '/':
-    // Even though \/ is considered a legal escape in JSON, a bare
-    // slash is also legal, so I see no reason to escape it.
-    // (I hope I am not misunderstanding something.)
-    // blep notes: actually escaping \/ may be useful in javascript to avoid </
-    // sequence.
-    // Should add a flag to allow this compatibility mode and prevent this
-    // sequence from occurring.
+    case '/':
+        if (escapeSlash)
+            result += "\\/";
+        else
+            result += "/";
+      break;
     default: {
       unsigned int cp = utf8ToCodepoint(c, end);
       // don't escape non-control characters
@@ -342,7 +340,7 @@ static JSONCPP_STRING valueToQuotedStringN(const char* value, unsigned length) {
 }
 
 JSONCPP_STRING valueToQuotedString(const char* value) {
-  return valueToQuotedStringN(value, static_cast<unsigned int>(strlen(value)));
+    return valueToQuotedStringN(value, static_cast<unsigned int>(strlen(value)), false);
 }
 
 // Class Writer
@@ -357,6 +355,8 @@ FastWriter::FastWriter()
       omitEndingLineFeed_(false) {}
 
 void FastWriter::enableYAMLCompatibility() { yamlCompatibilityEnabled_ = true; }
+
+void Writer::enableSlashEscaping() { slashEscapingEnabled_ = true; }
 
 void FastWriter::dropNullPlaceholders() { dropNullPlaceholders_ = true; }
 
@@ -391,7 +391,7 @@ void FastWriter::writeValue(const Value& value) {
     char const* end;
     bool ok = value.getString(&str, &end);
     if (ok)
-      document_ += valueToQuotedStringN(str, static_cast<unsigned>(end - str));
+        document_ += valueToQuotedStringN(str, static_cast<unsigned>(end - str), slashEscapingEnabled_);
     break;
   }
   case booleanValue:
@@ -416,7 +416,7 @@ void FastWriter::writeValue(const Value& value) {
       if (it != members.begin())
         document_ += ',';
       document_ += valueToQuotedStringN(name.data(),
-                                        static_cast<unsigned>(name.length()));
+                                        static_cast<unsigned>(name.length()), slashEscapingEnabled_);
       document_ += yamlCompatibilityEnabled_ ? ": " : ":";
       writeValue(value[name]);
     }
@@ -462,7 +462,7 @@ void StyledWriter::writeValue(const Value& value) {
     char const* end;
     bool ok = value.getString(&str, &end);
     if (ok)
-      pushValue(valueToQuotedStringN(str, static_cast<unsigned>(end - str)));
+        pushValue(valueToQuotedStringN(str, static_cast<unsigned>(end - str), slashEscapingEnabled_));
     else
       pushValue("");
     break;
@@ -485,7 +485,7 @@ void StyledWriter::writeValue(const Value& value) {
         const JSONCPP_STRING& name = *it;
         const Value& childValue = value[name];
         writeCommentBeforeValue(childValue);
-        writeWithIndent(valueToQuotedString(name.c_str()));
+        writeWithIndent(valueToQuotedStringN(name.c_str(), static_cast<unsigned>(name.size()), slashEscapingEnabled_));
         document_ += " : ";
         writeValue(childValue);
         if (++it == members.end()) {
@@ -643,9 +643,9 @@ bool StyledWriter::hasCommentForValue(const Value& value) {
 // Class StyledStreamWriter
 // //////////////////////////////////////////////////////////////////
 
-StyledStreamWriter::StyledStreamWriter(const JSONCPP_STRING& indentation)
+StyledStreamWriter::StyledStreamWriter(const JSONCPP_STRING& indentation, bool slashEscape)
     : document_(NULL), rightMargin_(74), indentation_(indentation),
-      addChildValues_(), indented_(false) {}
+      addChildValues_(), indented_(false), slashEscapingEnabled_(slashEscape)  {}
 
 void StyledStreamWriter::write(JSONCPP_OSTREAM& out, const Value& root) {
   document_ = &out;
@@ -682,7 +682,7 @@ void StyledStreamWriter::writeValue(const Value& value) {
     char const* end;
     bool ok = value.getString(&str, &end);
     if (ok)
-      pushValue(valueToQuotedStringN(str, static_cast<unsigned>(end - str)));
+      pushValue(valueToQuotedStringN(str, static_cast<unsigned>(end - str), slashEscapingEnabled_));
     else
       pushValue("");
     break;
@@ -705,7 +705,7 @@ void StyledStreamWriter::writeValue(const Value& value) {
         const JSONCPP_STRING& name = *it;
         const Value& childValue = value[name];
         writeCommentBeforeValue(childValue);
-        writeWithIndent(valueToQuotedString(name.c_str()));
+        writeWithIndent(valueToQuotedStringN(name.c_str(), static_cast<unsigned>(name.size()), slashEscapingEnabled_));
         *document_ << " : ";
         writeValue(childValue);
         if (++it == members.end()) {
@@ -880,7 +880,8 @@ struct BuiltStyledStreamWriter : public StreamWriter {
                           JSONCPP_STRING const& endingLineFeedSymbol,
                           bool useSpecialFloats,
                           unsigned int precision,
-                          PrecisionType precisionType);
+                          PrecisionType precisionType,
+                          bool slashEscaping);
   int write(Value const& root, JSONCPP_OSTREAM* sout) JSONCPP_OVERRIDE;
 
 private:
@@ -909,6 +910,7 @@ private:
   bool addChildValues_ : 1;
   bool indented_ : 1;
   bool useSpecialFloats_ : 1;
+  bool slashEscapingEnabled_ : 1;
   unsigned int precision_;
   PrecisionType precisionType_;
 };
@@ -920,11 +922,12 @@ BuiltStyledStreamWriter::BuiltStyledStreamWriter(
     JSONCPP_STRING const& endingLineFeedSymbol,
     bool useSpecialFloats,
     unsigned int precision,
-    PrecisionType precisionType)
+    PrecisionType precisionType,
+    bool slashEscaping)
     : rightMargin_(74), indentation_(indentation), cs_(cs),
       colonSymbol_(colonSymbol), nullSymbol_(nullSymbol),
       endingLineFeedSymbol_(endingLineFeedSymbol), addChildValues_(false),
-      indented_(false), useSpecialFloats_(useSpecialFloats),
+      indented_(false), useSpecialFloats_(useSpecialFloats), slashEscapingEnabled_(slashEscaping),
       precision_(precision), precisionType_(precisionType) {}
 int BuiltStyledStreamWriter::write(Value const& root, JSONCPP_OSTREAM* sout) {
   sout_ = sout;
@@ -962,7 +965,7 @@ void BuiltStyledStreamWriter::writeValue(Value const& value) {
     char const* end;
     bool ok = value.getString(&str, &end);
     if (ok)
-      pushValue(valueToQuotedStringN(str, static_cast<unsigned>(end - str)));
+        pushValue(valueToQuotedStringN(str, static_cast<unsigned>(end - str), slashEscapingEnabled_));
     else
       pushValue("");
     break;
@@ -986,7 +989,7 @@ void BuiltStyledStreamWriter::writeValue(Value const& value) {
         Value const& childValue = value[name];
         writeCommentBeforeValue(childValue);
         writeWithIndent(valueToQuotedStringN(
-            name.data(), static_cast<unsigned>(name.length())));
+            name.data(), static_cast<unsigned>(name.length()), slashEscapingEnabled_));
         *sout_ << colonSymbol_;
         writeValue(childValue);
         if (++it == members.end()) {
@@ -1169,6 +1172,7 @@ StreamWriter* StreamWriterBuilder::newStreamWriter() const {
   bool dnp = settings_["dropNullPlaceholders"].asBool();
   bool usf = settings_["useSpecialFloats"].asBool();
   unsigned int pre = settings_["precision"].asUInt();
+  unsigned int ese = settings_["enableSlashEscaping"].asBool();
   CommentStyle::Enum cs = CommentStyle::All;
   if (cs_str == "All") {
     cs = CommentStyle::All;
@@ -1200,7 +1204,7 @@ StreamWriter* StreamWriterBuilder::newStreamWriter() const {
   JSONCPP_STRING endingLineFeedSymbol;
   return new BuiltStyledStreamWriter(indentation, cs, colonSymbol, nullSymbol,
                                      endingLineFeedSymbol, usf, pre,
-                                     precisionType);
+                                     precisionType, ese);
 }
 static void getValidWriterKeys(std::set<JSONCPP_STRING>* valid_keys) {
   valid_keys->clear();
@@ -1211,6 +1215,7 @@ static void getValidWriterKeys(std::set<JSONCPP_STRING>* valid_keys) {
   valid_keys->insert("useSpecialFloats");
   valid_keys->insert("precision");
   valid_keys->insert("precisionType");
+  valid_keys->insert("enableSlashEscaping");
 }
 bool StreamWriterBuilder::validate(Json::Value* invalid) const {
   Json::Value my_invalid;
@@ -1242,6 +1247,7 @@ void StreamWriterBuilder::setDefaults(Json::Value* settings) {
   (*settings)["useSpecialFloats"] = false;
   (*settings)["precision"] = 17;
   (*settings)["precisionType"] = "significant";
+  (*settings)["enableSlashEscaping"] = false;
   //! [StreamWriterBuilderDefaults]
 }
 
