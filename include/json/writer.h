@@ -105,6 +105,8 @@ public:
     - "useSpecialFloats": false or true
       - If true, outputs non-finite floating point values in the following way:
         NaN values as "NaN", positive infinity as "Infinity", and negative
+    - "enableSlashEscaping": false or true
+      - If true, replaces \ in values with \\
     infinity as "-Infinity".
     - "precision": int
       - Number of precision digits for formatting of real values.

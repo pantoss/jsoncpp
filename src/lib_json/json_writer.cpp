@@ -1172,7 +1172,7 @@ StreamWriter* StreamWriterBuilder::newStreamWriter() const {
   bool dnp = settings_["dropNullPlaceholders"].asBool();
   bool usf = settings_["useSpecialFloats"].asBool();
   unsigned int pre = settings_["precision"].asUInt();
-  unsigned int ese = settings_["enableSlashEscaping"].asBool();
+  bool ese = settings_["enableSlashEscaping"].asBool();
   CommentStyle::Enum cs = CommentStyle::All;
   if (cs_str == "All") {
     cs = CommentStyle::All;
